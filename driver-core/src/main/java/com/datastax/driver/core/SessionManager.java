@@ -96,6 +96,8 @@ class SessionManager extends AbstractSession {
     }
 
     public CloseFuture closeAsync() {
+        preparedCache.invalidateAll();
+        
         CloseFuture future = closeFuture.get();
         if (future != null)
             return future;
