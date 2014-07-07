@@ -116,19 +116,15 @@ class HostConnectionPool {
             return c;
         }
 
-        int minInFlight;
-        PooledConnection leastBusy;
-        do {
-            leastBusy = null;
-            minInFlight = Integer.MAX_VALUE;
-            for (PooledConnection connection : connections) {
-                int inFlight = connection.inFlight.get();
-                if (inFlight < minInFlight) {
-                    minInFlight = inFlight;
-                    leastBusy = connection;
-                }
+        int minInFlight = Integer.MAX_VALUE;
+        PooledConnection leastBusy = null;
+        for (PooledConnection connection : connections) {
+            int inFlight = connection.inFlight.get();
+            if (inFlight < minInFlight) {
+                minInFlight = inFlight;
+                leastBusy = connection;
             }
-        } while(checkConnection(leastBusy)==false);        
+        }
 
         if (minInFlight >= options().getMaxSimultaneousRequestsPerConnectionThreshold(hostDistance) && connections.size() < options().getMaxConnectionsPerHost(hostDistance))
             maybeSpawnNewConnection();
@@ -238,14 +234,6 @@ class HostConnectionPool {
         } while (remaining > 0);
 
         throw new TimeoutException();
-    }
-    
-    private boolean checkConnection(PooledConnection connection){
-        boolean valid = connection == null || !connection.isDefunct();
-        if(!valid){           
-            replace(connection);
-        }
-        return valid;
     }
 
     public void returnConnection(PooledConnection connection) {
