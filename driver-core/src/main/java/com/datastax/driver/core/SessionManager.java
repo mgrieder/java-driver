@@ -24,6 +24,9 @@ import java.util.concurrent.locks.Lock;
 
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +51,8 @@ class SessionManager extends AbstractSession {
 
     private final Striped<Lock> poolCreationLocks = Striped.lazyWeakLock(5);
 
+    protected final LoadingCache<String, PreparedStatement> preparedCache;
+    
     private volatile boolean isInit;
     private volatile boolean isClosing;
 
@@ -56,6 +61,13 @@ class SessionManager extends AbstractSession {
         this.cluster = cluster;
         this.pools = new ConcurrentHashMap<Host, HostConnectionPool>();
         this.poolsState = new HostConnectionPool.PoolState();
+        
+        this.preparedCache = CacheBuilder.newBuilder().maximumSize(1000)
+                .build(new CacheLoader<String, PreparedStatement>() {
+                    public PreparedStatement load(String query) {
+                        return internalPrepare(query);
+                    }
+                });
     }
 
     public synchronized Session init() {
@@ -118,6 +130,23 @@ class SessionManager extends AbstractSession {
     public ResultSetFuture executeAsync(Statement statement) {
         return executeQuery(makeRequestMessage(statement, null), statement);
     }
+    
+    @Override
+    public PreparedStatement prepare(String query) {
+        try {
+            return preparedCache.getUnchecked(query);
+        } catch (UncheckedExecutionException ex) {
+            Throwable causeEx = ex.getCause();
+            if (causeEx instanceof RuntimeException) {
+                throw (RuntimeException) causeEx;
+            }
+            throw ex;
+        }
+    }
+    
+    public PreparedStatement internalPrepare(String query) {
+        return super.prepare(query);        
+    }
 
     public ListenableFuture<PreparedStatement> prepareAsync(String query) {
         Connection.Future future = new Connection.Future(new Requests.Prepare(query));
@@ -126,6 +155,8 @@ class SessionManager extends AbstractSession {
     }
 
     public CloseFuture closeAsync() {
+        preparedCache.invalidateAll();
+        
         CloseFuture future = closeFuture.get();
         if (future != null)
             return future;
